@@ -11,7 +11,6 @@ from django.utils.translation import gettext_lazy as _
 from stripe import InvalidRequestError
 
 from .. import enums
-from ..exceptions import MultipleSubscriptionException
 from ..fields import (
     JSONField,
     PaymentMethodForeignKey,
@@ -962,103 +961,6 @@ class Customer(StripeModel):
 
         self.date_purged = timezone.now()
         self.save()
-
-    def _get_valid_subscriptions(self):
-        """Get a list of this customer's valid subscriptions."""
-
-        return [
-            subscription
-            for subscription in self.subscriptions.all()
-            if subscription.is_valid()
-        ]
-
-    def is_subscribed_to(self, product: Product | str) -> bool:
-        """
-        Checks to see if this customer has an active subscription to the given product.
-
-        :param product: The product for which to check for an active subscription.
-        :type product: Product or string (product ID)
-
-        :returns: True if there exists an active subscription, False otherwise.
-        """
-
-        if isinstance(product, StripeModel):
-            product = product.id
-
-        for subscription in self._get_valid_subscriptions():
-            for item in subscription.items.all():
-                if item.price and item.price.product.id == product:
-                    return True
-        return False
-
-    def has_any_active_subscription(self):
-        """
-        Checks to see if this customer has an active subscription to any plan.
-
-        :returns: True if there exists an active subscription, False otherwise.
-        """
-
-        return len(self._get_valid_subscriptions()) != 0
-
-    @property
-    def active_subscriptions(self):
-        """
-        Returns active subscriptions
-        (subscriptions with an active status that end in the future).
-        """
-        now = timezone.now()
-        return [
-            subscription
-            for subscription in self.subscriptions.all()
-            if subscription.status == enums.SubscriptionStatus.active
-            and subscription.current_period_end
-            and subscription.current_period_end > now
-        ]
-
-    @property
-    def valid_subscriptions(self):
-        """
-        Returns this customer's valid subscriptions
-        (subscriptions that aren't canceled, incomplete or incomplete_expired).
-
-        ``incomplete`` subscriptions are excluded because their initial payment
-        has not yet succeeded (eg. subscriptions created with
-        ``payment_behavior="default_incomplete"``), so the customer is not yet
-        paying for them.
-        """
-        return [
-            subscription
-            for subscription in self.subscriptions.all()
-            if subscription.status
-            not in [
-                enums.SubscriptionStatus.canceled,
-                enums.SubscriptionStatus.incomplete,
-                enums.SubscriptionStatus.incomplete_expired,
-            ]
-        ]
-
-    @property
-    def subscription(self):
-        """
-        Shortcut to get this customer's subscription.
-
-        :returns: None if the customer has no subscriptions, the subscription if
-            the customer has a subscription.
-        :raises MultipleSubscriptionException: Raised if the customer has multiple
-            subscriptions.
-            In this case, use ``Customer.subscriptions`` instead.
-        """
-
-        subscriptions = self.valid_subscriptions
-
-        if len(subscriptions) > 1:
-            raise MultipleSubscriptionException(
-                "This customer has multiple subscriptions. Use Customer.subscriptions "
-                "to access them."
-            )
-        if subscriptions:
-            return subscriptions[0]
-        return None
 
     def send_invoice(self, **kwargs):
         """

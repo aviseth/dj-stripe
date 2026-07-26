@@ -1312,55 +1312,25 @@ class Subscription(StripeModel):
 
         return Subscription.sync_from_stripe_data(stripe_subscription.save())
 
-    def is_period_current(self):
+    def is_period_current(self, at=None):
         """
-        Returns True if this subscription's period is current, false otherwise.
+        Return whether this subscription's billing period or trial contains ``at``.
         """
+        at = at or timezone.now()
 
-        return self.current_period_end > timezone.now() or (
-            self.trial_end and self.trial_end > timezone.now()
+        return bool(
+            (self.current_period_end and self.current_period_end > at)
+            or (self.trial_end and self.trial_end > at)
         )
 
-    def is_status_current(self):
-        """
-        Returns True if this subscription's status is current (active or trialing),
-        false otherwise.
-        """
-
-        return self.status in ("trialing", "active")
-
-    def is_status_temporarily_current(self):
-        """
-        A status is temporarily current when the subscription is canceled with the
-        ``at_period_end`` flag.
-        The subscription is still active, but is technically canceled and we're just
-        waiting for it to run out.
-
-        You could use this method to give customers limited service after they've
-        canceled. For example, a video on demand service could only allow customers
-        to download their libraries and do nothing else when their
-        subscription is temporarily current.
-        """
-
-        return (
-            self.canceled_at
-            and self.cancel_at_period_end
-            and timezone.now() < self.current_period_end
+    def is_scheduled_for_cancellation(self, at=None):
+        """Return whether this Subscription will cancel at the period end."""
+        at = at or timezone.now()
+        return bool(
+            self.cancel_at_period_end
+            and self.current_period_end
+            and at < self.current_period_end
         )
-
-    def is_valid(self):
-        """
-        Returns True if this subscription's status and period are current,
-        false otherwise.
-        """
-
-        if not self.is_status_current():
-            return False
-
-        if not self.is_period_current():
-            return False
-
-        return True
 
     def _attach_objects_post_save_hook(
         self,

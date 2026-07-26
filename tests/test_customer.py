@@ -11,7 +11,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from stripe import InvalidRequestError
 
-from djstripe.exceptions import MultipleSubscriptionException
+from djstripe.enums import SubscriptionStatus
 from djstripe.models import (
     Card,
     Charge,
@@ -55,6 +55,13 @@ from . import (
     datetime_to_unix,
 )
 from .conftest import CreateAccountMixin
+
+
+def _service_subscriptions(customer):
+    return customer.subscriptions.with_status(
+        SubscriptionStatus.active,
+        SubscriptionStatus.trialing,
+    ).period_current()
 
 
 class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
@@ -1215,7 +1222,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
     @patch(
         "stripe.Product.retrieve", return_value=deepcopy(FAKE_PRODUCT), autospec=True
     )
-    def test_subscription_shortcut_with_multiple_subscriptions_old_style(
+    def test_subscription_query_with_multiple_subscriptions_old_style(
         self, product_retrieve_mock, customer_retrieve_mock, subscription_create_mock
     ):
         price = Price.sync_from_stripe_data(deepcopy(FAKE_PRICE))
@@ -1229,11 +1236,17 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
 
         subscription_fake_duplicate = deepcopy(FAKE_SUBSCRIPTION)
         subscription_fake_duplicate["id"] = "sub_6lsC8pt7IcF8jd"
+        subscription_fake_duplicate["current_period_end"] = datetime_to_unix(
+            timezone.now() + timezone.timedelta(days=7)
+        )
         # latest_invoice has to be None for an invoice that doesn't exist yet
         # and hence cannot have been billed yet
         subscription_fake_duplicate["latest_invoice"] = None
 
         fake_subscription = deepcopy(FAKE_SUBSCRIPTION)
+        fake_subscription["current_period_end"] = datetime_to_unix(
+            timezone.now() + timezone.timedelta(days=7)
+        )
         # latest_invoice has to be None for an invoice that doesn't exist yet
         # and hence cannot have been billed yet
         fake_subscription["latest_invoice"] = None
@@ -1247,10 +1260,15 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
         self.customer.subscribe(price=price)
 
         self.assertEqual(2, self.customer.subscriptions.count())
-        self.assertEqual(2, len(self.customer.valid_subscriptions))
-
-        with self.assertRaises(MultipleSubscriptionException):
-            _ = self.customer.subscription
+        self.assertEqual(
+            2,
+            self.customer.subscriptions.with_status(
+                SubscriptionStatus.active,
+                SubscriptionStatus.trialing,
+            )
+            .period_current()
+            .count(),
+        )
 
     @patch.object(Subscription, "_api_create", autospec=True)
     @patch("stripe.Subscription.create", autospec=True)
@@ -1260,7 +1278,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
     @patch(
         "stripe.Product.retrieve", return_value=deepcopy(FAKE_PRODUCT), autospec=True
     )
-    def test_subscription_shortcut_with_multiple_subscriptions_new_style_by_price(
+    def test_subscription_query_with_multiple_subscriptions_new_style_by_price(
         self,
         product_retrieve_mock,
         customer_retrieve_mock,
@@ -1277,11 +1295,17 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
 
         subscription_fake_duplicate = deepcopy(FAKE_SUBSCRIPTION)
         subscription_fake_duplicate["id"] = "sub_6lsC8pt7IcF8jd"
+        subscription_fake_duplicate["current_period_end"] = datetime_to_unix(
+            timezone.now() + timezone.timedelta(days=7)
+        )
         # latest_invoice has to be None for an invoice that doesn't exist yet
         # and hence cannot have been billed yet
         subscription_fake_duplicate["latest_invoice"] = None
 
         fake_subscription = deepcopy(FAKE_SUBSCRIPTION)
+        fake_subscription["current_period_end"] = datetime_to_unix(
+            timezone.now() + timezone.timedelta(days=7)
+        )
         # latest_invoice has to be None for an invoice that doesn't exist yet
         # and hence cannot have been billed yet
         fake_subscription["latest_invoice"] = None
@@ -1299,7 +1323,15 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
         self.customer.subscribe(items=[{"price": price}, {"price": price}])
 
         self.assertEqual(1, self.customer.subscriptions.count())
-        self.assertEqual(1, len(self.customer.valid_subscriptions))
+        self.assertEqual(
+            1,
+            self.customer.subscriptions.with_status(
+                SubscriptionStatus.active,
+                SubscriptionStatus.trialing,
+            )
+            .period_current()
+            .count(),
+        )
 
         # subscribe() forwards items verbatim; the test only needs to know
         # the right items + customer made it through.
@@ -1316,7 +1348,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
     @patch(
         "stripe.Product.retrieve", return_value=deepcopy(FAKE_PRODUCT), autospec=True
     )
-    def test_subscription_shortcut_with_invalid_subscriptions(
+    def test_subscription_query_with_explicit_statuses(
         self, product_retrieve_mock, customer_retrieve_mock
     ):
         price = Price.sync_from_stripe_data(deepcopy(FAKE_PRICE))
@@ -1329,6 +1361,9 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
         )
 
         fake_subscription_upd = deepcopy(FAKE_SUBSCRIPTION)
+        fake_subscription_upd["current_period_end"] = datetime_to_unix(
+            timezone.now() + timezone.timedelta(days=7)
+        )
         # latest_invoice has to be None for an invoice that doesn't exist yet
         # and hence cannot have been billed yet
         fake_subscription_upd["latest_invoice"] = None
@@ -1340,13 +1375,11 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
             deepcopy(fake_subscription_upd),
         ]
 
-        # update the status of all but one to be invalid,
-        # we need to also change the id for sync to work
+        # Give each subscription a distinct status and ID.
         fake_subscriptions[1]["status"] = "canceled"
         fake_subscriptions[1]["id"] = fake_subscriptions[1]["id"] + "foo1"
         fake_subscriptions[2]["status"] = "incomplete_expired"
         fake_subscriptions[2]["id"] = fake_subscriptions[2]["id"] + "foo2"
-        # incomplete: initial payment not yet succeeded, so not valid (#1721)
         fake_subscriptions[3]["status"] = "incomplete"
         fake_subscriptions[3]["id"] = fake_subscriptions[3]["id"] + "foo3"
 
@@ -1359,12 +1392,15 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
                 self.customer.subscribe(items=[{"price": price}])
 
         self.assertEqual(4, self.customer.subscriptions.count())
-        self.assertEqual(1, len(self.customer.valid_subscriptions))
+        service_subscriptions = self.customer.subscriptions.with_status(
+            SubscriptionStatus.active,
+            SubscriptionStatus.trialing,
+        ).period_current()
+        self.assertEqual(1, service_subscriptions.count())
         self.assertEqual(
-            self.customer.valid_subscriptions[0], self.customer.subscription
+            fake_subscriptions[0]["id"],
+            service_subscriptions.get().id,
         )
-
-        self.assertEqual(fake_subscriptions[0]["id"], self.customer.subscription.id)
 
     @patch(
         "djstripe.models.InvoiceItem.sync_from_stripe_data",
@@ -1541,7 +1577,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
     @patch(
         "stripe.Product.retrieve", return_value=deepcopy(FAKE_PRODUCT), autospec=True
     )
-    def test_is_subscribed_to_with_product_old_style(
+    def test_filter_subscriptions_for_product_old_style(
         self,
         product_retrieve_mock,
         customer_retrieve_mock,
@@ -1562,7 +1598,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
 
         self.customer.subscribe(items=[{"price": price}])
 
-        assert self.customer.is_subscribed_to(product)
+        assert _service_subscriptions(self.customer).for_product(product).exists()
 
     @patch("stripe.Subscription.create", autospec=True)
     @patch(
@@ -1571,7 +1607,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
     @patch(
         "stripe.Product.retrieve", return_value=deepcopy(FAKE_PRODUCT), autospec=True
     )
-    def test_is_subscribed_to_with_product_new_style(
+    def test_filter_subscriptions_for_product_new_style(
         self, product_retrieve_mock, customer_retrieve_mock, subscription_create_mock
     ):
         price = Price.sync_from_stripe_data(deepcopy(FAKE_PRICE))
@@ -1589,7 +1625,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
 
         self.customer.subscribe(items=[{"price": price}])
 
-        assert self.customer.is_subscribed_to(product)
+        assert _service_subscriptions(self.customer).for_product(product).exists()
 
     @patch("stripe.Subscription.create", autospec=True)
     @patch(
@@ -1598,7 +1634,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
     @patch(
         "stripe.Product.retrieve", return_value=deepcopy(FAKE_PRODUCT), autospec=True
     )
-    def test_is_subscribed_to_with_product_string_new_style(
+    def test_filter_subscriptions_for_product_string_new_style(
         self, product_retrieve_mock, customer_retrieve_mock, subscription_create_mock
     ):
         price = Price.sync_from_stripe_data(deepcopy(FAKE_PRICE))
@@ -1616,7 +1652,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
 
         self.customer.subscribe(items=[{"price": price}])
 
-        assert self.customer.is_subscribed_to(product.id)
+        assert _service_subscriptions(self.customer).for_product(product.id).exists()
 
     @patch("stripe.Subscription.create", autospec=True)
     @patch(
@@ -1625,7 +1661,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
     @patch(
         "stripe.Product.retrieve", return_value=deepcopy(FAKE_PRODUCT), autospec=True
     )
-    def test_is_subscribed_to_with_product_string_by_price(
+    def test_filter_subscriptions_for_product_string_by_price(
         self, product_retrieve_mock, customer_retrieve_mock, subscription_create_mock
     ):
         price = Price.sync_from_stripe_data(deepcopy(FAKE_PRICE))
@@ -1643,7 +1679,7 @@ class TestCustomer(CreateAccountMixin, AssertStripeFksMixin, TestCase):
 
         self.customer.subscribe(price=price)
 
-        assert self.customer.is_subscribed_to(product.id)
+        assert _service_subscriptions(self.customer).for_product(product.id).exists()
 
 
 class TestCustomerLegacy(CreateAccountMixin, AssertStripeFksMixin, TestCase):

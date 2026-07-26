@@ -32,8 +32,6 @@ API directly:
 | [`add_payment_method()`][djstripe.models.core.Customer.add_payment_method] | Attach a payment method. See [Adding a payment method](add_payment_method_to_customer.md). |
 | [`add_invoice_item()`][djstripe.models.core.Customer.add_invoice_item] | Add a one-off line item to the customer's next invoice. |
 | [`add_coupon()`][djstripe.models.core.Customer.add_coupon] | Apply a coupon to the customer. |
-| [`is_subscribed_to()`][djstripe.models.core.Customer.is_subscribed_to] | Check whether the customer has an active subscription to a given product. |
-| [`has_any_active_subscription()`][djstripe.models.core.Customer.has_any_active_subscription] | Whether the customer has any active subscription. |
 | [`send_invoice()`][djstripe.models.core.Customer.send_invoice] | Create and send an invoice. |
 | [`upcoming_invoice()`][djstripe.models.core.Customer.upcoming_invoice] | Preview the customer's next invoice. |
 | [`purge()`][djstripe.models.core.Customer.purge] | Delete the customer in Stripe and detach it locally. |
@@ -41,19 +39,53 @@ API directly:
 ## Accessing subscriptions
 
 Because Stripe data is mirrored into Django models, you query a customer's related
-objects through the ORM. `Customer` also provides convenience properties:
+objects through the ORM:
 
 ```python
-# Convenience properties:
-customer.subscription          # the customer's single active subscription, or None
-customer.active_subscriptions  # queryset of active subscriptions
-customer.valid_subscriptions   # active subscriptions that have not ended
-
-# Or query the related models directly:
 customer.subscriptions.all()
 customer.invoices.all()
 customer.charges.all()
 ```
+
+Subscription status does not by itself determine whether a customer should have
+access to your application. For example, some applications allow access while a
+payment is being retried and the subscription is `past_due`, while others revoke
+it immediately. Define that policy in your application by explicitly selecting
+the statuses you accept:
+
+```python
+from djstripe.enums import SubscriptionStatus
+
+SERVICE_STATUSES = {
+    SubscriptionStatus.trialing,
+    SubscriptionStatus.active,
+    SubscriptionStatus.past_due,
+}
+
+service_subscriptions = (
+    customer.subscriptions.with_status(*SERVICE_STATUSES).period_current()
+)
+
+has_access = service_subscriptions.exists()
+has_product_access = service_subscriptions.for_product(product).exists()
+```
+
+The subscription queryset filters are composable:
+
+| Filter | Purpose |
+| --- | --- |
+| `with_status(*statuses)` | Select one or more explicit Stripe statuses. |
+| `active()`, `trialing()`, `past_due()`, `canceled()`, `incomplete()` | Select a single Stripe status. |
+| `period_current(at=None)` | Select subscriptions whose billing period or trial contains a point in time. |
+| `scheduled_for_cancellation()` | Select subscriptions set to cancel at the end of their period. |
+| `for_product(product)` | Select subscriptions containing a price for a product or product ID. |
+
+These filters are available from both `Subscription.objects` and the
+`customer.subscriptions` reverse relation. Use
+[`Subscription.is_period_current()`][djstripe.models.billing.Subscription.is_period_current]
+or
+[`Subscription.is_scheduled_for_cancellation()`][djstripe.models.billing.Subscription.is_scheduled_for_cancellation]
+when working with one subscription instance.
 
 See the [`Customer` API reference][djstripe.models.core.Customer] for the full list
 of methods, properties and relations.

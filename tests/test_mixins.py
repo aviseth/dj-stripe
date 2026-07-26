@@ -77,3 +77,7 @@ class TestSubscriptionMixin(CreateAccountMixin, TestCase):
         self.assertTrue(context["is_prices_plural"], "Incorrect is_prices_plural.")
 
         self.assertIn("customer", context, "customer missing from context.")
+        self.assertQuerySetEqual(
+            context["subscriptions"],
+            context["customer"].subscriptions.all(),
+        )

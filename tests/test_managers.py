@@ -10,7 +10,14 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from djstripe.models import Charge, Customer, Price, Subscription, Transfer
+from djstripe.models import (
+    Charge,
+    Customer,
+    Price,
+    Subscription,
+    SubscriptionItem,
+    Transfer,
+)
 from djstripe.utils import get_timezone_utc
 
 from . import (
@@ -30,7 +37,9 @@ def _unix(*args, **kwargs):
     )
 
 
-def _make_subscription(*, id, customer, plan, status, start_date, canceled_at=None):
+def _make_subscription(
+    *, id, customer, plan, status, start_date, canceled_at=None, **extra_data
+):
     """Create a Subscription row with stripe_data populated for ORM lookups.
 
     Most Subscription fields (status, start_date, canceled_at, plan, ...) live
@@ -46,6 +55,7 @@ def _make_subscription(*, id, customer, plan, status, start_date, canceled_at=No
     }
     if canceled_at is not None:
         stripe_data["canceled_at"] = canceled_at
+    stripe_data.update(extra_data)
     sub = Subscription(id=id, customer=customer, stripe_data=stripe_data)
     sub.save()
     return sub
@@ -155,6 +165,39 @@ class SubscriptionManagerTest(CreateAccountMixin, TestCase):
         # backed by a stripe_data JSON path, not raise.
         for method in ("active", "canceled", "trialing", "past_due", "incomplete"):
             list(getattr(Subscription.objects, method)())
+
+    def test_subscription_filters_are_composable_on_customer_relation(self):
+        subscription = Subscription.objects.active().first()
+        assert subscription is not None
+
+        now = datetime.datetime.now(tz=datetime.UTC)
+        subscription.stripe_data.update(
+            {
+                "current_period_end": int(
+                    (now + datetime.timedelta(days=7)).timestamp()
+                ),
+                "cancel_at_period_end": True,
+            }
+        )
+        subscription.save(update_fields=["stripe_data"])
+        SubscriptionItem.objects.create(
+            id="si_composable_filters",
+            subscription=subscription,
+            price=self.plan,
+            livemode=False,
+        )
+
+        subscriptions = (
+            subscription.customer.subscriptions.with_status("active", "trialing")
+            .period_current()
+            .scheduled_for_cancellation()
+            .for_product(self.plan.product)
+        )
+
+        self.assertQuerySetEqual(subscriptions, [subscription])
+        self.assertFalse(
+            subscriptions.period_current(at=now + datetime.timedelta(days=8)).exists()
+        )
 
 
 class TransferManagerTest(TestCase):

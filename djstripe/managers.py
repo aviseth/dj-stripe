@@ -35,16 +35,62 @@ class StripeModelManager(models.Manager):
     pass
 
 
-class SubscriptionManager(models.Manager):
-    """Manager used in models.Subscription.
+class SubscriptionQuerySet(models.QuerySet):
+    """Composable filters for ``Subscription`` objects.
 
     Most Subscription fields are read from ``stripe_data`` (a JSONField) since
     the dj-stripe 2.10 refactor removed them as concrete columns. ORM filters
-    must therefore use ``stripe_data__<key>`` lookups. Date-like fields
-    (``start_date``, ``canceled_at``, ``trial_end``) are stored as Unix
-    timestamps in the JSON, so range filters are expressed against integer
-    bounds.
+    must therefore use ``stripe_data__<key>`` lookups. Date-like fields are
+    stored as Unix timestamps in the JSON.
     """
+
+    def with_status(self, *statuses):
+        """Return Subscriptions whose Stripe status is one of ``statuses``."""
+        return self.filter(stripe_data__status__in=statuses)
+
+    def active(self):
+        """Return active Subscriptions."""
+        return self.with_status("active")
+
+    def canceled(self):
+        """Return canceled Subscriptions."""
+        return self.with_status("canceled")
+
+    def trialing(self):
+        """Return trialing Subscriptions."""
+        return self.with_status("trialing")
+
+    def past_due(self):
+        """Return past-due Subscriptions."""
+        return self.with_status("past_due")
+
+    def incomplete(self):
+        """Return incomplete Subscriptions."""
+        return self.with_status("incomplete")
+
+    def period_current(self, at=None):
+        """Return Subscriptions whose billing period or trial contains ``at``."""
+        at = at or timezone.now()
+        timestamp = int(at.timestamp())
+        return self.filter(
+            (
+                models.Q(stripe_data__current_period_end__gt=timestamp)
+                & ~models.Q(stripe_data__current_period_end=None)
+            )
+            | (
+                models.Q(stripe_data__trial_end__gt=timestamp)
+                & ~models.Q(stripe_data__trial_end=None)
+            )
+        )
+
+    def scheduled_for_cancellation(self):
+        """Return Subscriptions set to cancel at the end of their period."""
+        return self.filter(stripe_data__cancel_at_period_end=True)
+
+    def for_product(self, product):
+        """Return Subscriptions containing a Price for ``product``."""
+        product_id = getattr(product, "id", product)
+        return self.filter(items__price__product__id=product_id).distinct()
 
     def started_during(self, year, month):
         """Return Subscriptions not in trial status between a certain time range."""
@@ -54,14 +100,6 @@ class SubscriptionManager(models.Manager):
             stripe_data__start_date__lt=end,
         )
 
-    def active(self):
-        """Return active Subscriptions."""
-        return self.filter(stripe_data__status="active")
-
-    def canceled(self):
-        """Return canceled Subscriptions."""
-        return self.filter(stripe_data__status="canceled")
-
     def canceled_during(self, year, month):
         """Return Subscriptions canceled during a certain time range."""
         start, end = _month_unix_range(year, month)
@@ -69,6 +107,21 @@ class SubscriptionManager(models.Manager):
             stripe_data__canceled_at__gte=start,
             stripe_data__canceled_at__lt=end,
         )
+
+    def expiring_trials(self, days=7):
+        """Return trials ending within ``days`` days."""
+        now = timezone.now()
+        cutoff_date = now + timedelta(days=days)
+        return self.trialing().filter(
+            stripe_data__trial_end__lte=int(cutoff_date.timestamp()),
+            stripe_data__trial_end__gte=int(now.timestamp()),
+        )
+
+
+class SubscriptionManager(
+    models.Manager.from_queryset(SubscriptionQuerySet)  # type: ignore[misc]
+):
+    """Manager used in models.Subscription."""
 
     def started_plan_summary_for(self, year, month):
         """Return started_during Subscriptions with plan counts annotated."""
@@ -105,23 +158,6 @@ class SubscriptionManager(models.Manager):
         if active == 0:
             return decimal.Decimal(0)
         return decimal.Decimal(str(canceled)) / decimal.Decimal(str(active))
-
-    def trialing(self):
-        return self.filter(stripe_data__status="trialing")
-
-    def expiring_trials(self, days=7):
-        now = timezone.now()
-        cutoff_date = now + timedelta(days=days)
-        return self.trialing().filter(
-            stripe_data__trial_end__lte=int(cutoff_date.timestamp()),
-            stripe_data__trial_end__gte=int(now.timestamp()),
-        )
-
-    def past_due(self):
-        return self.filter(stripe_data__status="past_due")
-
-    def incomplete(self):
-        return self.filter(stripe_data__status="incomplete")
 
 
 class TransferManager(models.Manager):
