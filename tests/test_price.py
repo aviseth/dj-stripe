@@ -41,9 +41,11 @@ class PriceCreateTest(CreateAccountMixin, AssertStripeFksMixin, TestCase):
         fake_price = deepcopy(FAKE_PRICE)
         if product is not None:
             fake_price["product"] = product
-        fake_price["unit_amount"] /= 100
         if extra_kwargs:
             fake_price.update(extra_kwargs)
+
+        stripe_response = deepcopy(FAKE_PRICE)
+        stripe_response["unit_amount"] = fake_price["unit_amount"]
 
         with (
             patch(
@@ -52,16 +54,18 @@ class PriceCreateTest(CreateAccountMixin, AssertStripeFksMixin, TestCase):
                 autospec=True,
             ),
             patch(
-                "stripe.Price.create", return_value=deepcopy(FAKE_PRICE), autospec=True
+                "stripe.Price.create", return_value=stripe_response, autospec=True
             ) as price_create_mock,
         ):
             price = Price.create(**fake_price)
 
-        # The wrapper must convert dollar amounts back to cents and accept any of
-        # str id / Stripe dict / djstripe Product instance for `product`.
+        # The wrapper must pass Stripe's minor currency units through unchanged
+        # and accept any of str id / Stripe dict / djstripe Product instance for
+        # `product`.
         price_create_mock.assert_called_once()
         call_kwargs = price_create_mock.call_args.kwargs
-        assert call_kwargs["unit_amount"] == FAKE_PRICE["unit_amount"]
+        assert call_kwargs["unit_amount"] == fake_price["unit_amount"]
+        assert price.unit_amount == fake_price["unit_amount"]
         if extra_kwargs:
             for key, value in extra_kwargs.items():
                 assert call_kwargs[key] == value
@@ -79,6 +83,9 @@ class PriceCreateTest(CreateAccountMixin, AssertStripeFksMixin, TestCase):
 
     def test_create_with_metadata(self):
         self._create_price(extra_kwargs={"metadata": {"other_data": "more_data"}})
+
+    def test_create_preserves_unit_amount(self):
+        self._create_price(extra_kwargs={"unit_amount": 1})
 
 
 class PriceTest(CreateAccountMixin, AssertStripeFksMixin, TestCase):
