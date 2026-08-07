@@ -39,7 +39,12 @@ def is_restricted_key(api_key: str) -> bool:
     Return whether the given key is a restricted key (``rk_...``).
 
     Restricted keys are limited to the permissions granted to them in the
-    Stripe dashboard, and notably cannot call ``GET /v1/account``.
+    Stripe dashboard, so calls that dj-stripe makes unconditionally for
+    secret keys may not be available to them.
+
+    NOTE: this deliberately does not go through `get_api_key_details_by_prefix`,
+    which validates the whole key and raises on anything malformed. Callers here
+    only want to know how to treat a key, not to reject it.
     """
     return api_key.startswith("rk_")
 

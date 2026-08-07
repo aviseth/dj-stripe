@@ -156,8 +156,8 @@ class Account(StripeModel):
         # read at call time (the default would be frozen at import time).
         api_key = api_key or djstripe_settings.STRIPE_SECRET_KEY
 
-        # As of API version 2020-03-02, there is no permission that can allow
-        # restricted keys to call GET /v1/account.
+        # dj-stripe does not attempt GET /v1/account with restricted keys: as of
+        # API version 2020-03-02 no permission was available that allowed it.
         # NOTE: test the key we were passed, not the one in settings: callers
         # such as `djstripe_sync_models --api-keys rk_...` pass a key that is
         # not the configured default.

@@ -19,7 +19,7 @@ from djstripe.management.commands.djstripe_sync_models import Command
 from djstripe.settings import djstripe_settings
 from djstripe.sync import sync_subscriber
 
-from . import FAKE_CUSTOMER, StripeList
+from . import FAKE_CUSTOMER, StripeItem, StripeList
 from .conftest import CreateAccountMixin
 
 
@@ -175,7 +175,7 @@ class TestSyncModelsGetApiKeys(TestCase):
 
 class TestSyncModelsRestrictedKeys(TestCase):
     """
-    Restricted keys cannot call `GET /v1/account`.
+    dj-stripe does not attempt `GET /v1/account` with restricted keys.
 
     Regression tests for #1908: syncing with `--api-keys rk_...` crashed with
     `'NoneType' object has no attribute 'id'`, because the restricted-key guard
@@ -196,12 +196,18 @@ class TestSyncModelsRestrictedKeys(TestCase):
         retrieve_mock.assert_not_called()
 
     def test_get_stripe_account_skips_platform_retrieve_for_restricted_key(self):
+        # Skipping the platform account must not cost us the connected ones.
+        connected = StripeList(
+            data=[StripeItem(id="acct_one"), StripeItem(id="acct_two")]
+        )
+
         with (
             patch("stripe.Account.retrieve") as retrieve_mock,
-            patch("djstripe.models.Account.api_list", return_value=StripeList(data=[])),
+            patch("djstripe.models.Account.api_list", return_value=connected),
         ):
-            assert Command.get_stripe_account(api_key=self.RK_TEST) == set()
+            accounts = Command.get_stripe_account(api_key=self.RK_TEST)
 
+        assert accounts == {"acct_one", "acct_two"}
         retrieve_mock.assert_not_called()
 
     def test_sync_account_with_restricted_key_does_not_crash(self):
@@ -219,9 +225,11 @@ class TestSyncModelsRestrictedKeys(TestCase):
             )
 
         retrieve_mock.assert_not_called()
-        assert "NoneType" not in stderr.getvalue()
+        assert stderr.getvalue() == ""
 
-    @override_settings(STRIPE_TEST_SECRET_KEY="rk_test_" + "e" * 24)
+    @override_settings(
+        STRIPE_TEST_SECRET_KEY="rk_test_" + "e" * 24, STRIPE_LIVE_SECRET_KEY=""
+    )
     def test_sync_account_does_not_dereference_missing_default_account(self):
         # The originally reported failure: with a restricted key configured,
         # `get_default_account()` correctly returns None and the command then
@@ -236,4 +244,6 @@ class TestSyncModelsRestrictedKeys(TestCase):
         ):
             call_command("djstripe_sync_models", "Account", stderr=stderr)
 
-        assert "NoneType" not in stderr.getvalue(), stderr.getvalue()
+        # Assert on the outcome, not just on the absence of the old error
+        # string: nothing should be reported as failed at all.
+        assert stderr.getvalue() == ""
