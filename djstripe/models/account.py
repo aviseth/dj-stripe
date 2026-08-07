@@ -6,7 +6,7 @@ from stripe import AuthenticationError, InvalidRequestError, PermissionError
 
 from ..enums import APIKeyType
 from ..settings import djstripe_settings
-from .api import APIKey, get_api_key_details_by_prefix
+from .api import APIKey, get_api_key_details_by_prefix, is_restricted_key
 from .base import StripeModel, logger
 
 
@@ -151,10 +151,17 @@ class Account(StripeModel):
         return ""
 
     @classmethod
-    def get_default_account(cls, api_key=djstripe_settings.STRIPE_SECRET_KEY):
+    def get_default_account(cls, api_key=None):
+        # Resolve the key here rather than as a default argument so that it is
+        # read at call time (the default would be frozen at import time).
+        api_key = api_key or djstripe_settings.STRIPE_SECRET_KEY
+
         # As of API version 2020-03-02, there is no permission that can allow
-        # restricted keys to call GET /v1/account
-        if djstripe_settings.STRIPE_SECRET_KEY.startswith("rk_"):
+        # restricted keys to call GET /v1/account.
+        # NOTE: test the key we were passed, not the one in settings: callers
+        # such as `djstripe_sync_models --api-keys rk_...` pass a key that is
+        # not the configured default.
+        if is_restricted_key(api_key):
             return None
 
         account_data = cls.stripe_class.retrieve(
