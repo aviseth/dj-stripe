@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import TestCase
 
-from djstripe.models import Account, Customer, StripeModel
+from djstripe.models import Account, APIKey, Coupon, Customer, StripeModel
 from djstripe.settings import djstripe_settings
 
 pytestmark = pytest.mark.django_db
@@ -297,3 +297,46 @@ def test__find_owner_account_for_webhook_event_trigger(
             mock_get_or_retrieve_for_api_key.assert_called_once_with(
                 djstripe_settings.STRIPE_SECRET_KEY
             )
+
+
+class TestSyncFromStripeData(TestCase):
+    """Tests for `StripeModel.sync_from_stripe_data`."""
+
+    def setUp(self):
+        # Seed the owner account so syncing resolves it locally rather than
+        # reaching for the Stripe API.
+        account = Account.objects.create(
+            id="acct_test_sync",
+            stripe_data={"id": "acct_test_sync", "object": "account"},
+        )
+        key, _ = APIKey.objects.get_or_create_by_api_key(
+            djstripe_settings.STRIPE_SECRET_KEY
+        )
+        key.djstripe_owner_account = account
+        key.save()
+
+    @staticmethod
+    def _coupon_data(percent_off):
+        return {
+            "id": "co_test_sync",
+            "object": "coupon",
+            "duration": "forever",
+            "percent_off": percent_off,
+            "livemode": False,
+            "valid": True,
+            "metadata": {},
+        }
+
+    def test_updates_an_existing_instance(self):
+        # Regression for #2032: syncing an object that already exists must
+        # persist the new data, not just return the stale row.
+        created = Coupon.sync_from_stripe_data(self._coupon_data(10))
+        assert created.stripe_data["percent_off"] == 10
+
+        returned = Coupon.sync_from_stripe_data(self._coupon_data(25))
+
+        # The returned instance reflects the new data...
+        assert returned.stripe_data["percent_off"] == 25
+        # ...and so does a fresh read from the database.
+        assert Coupon.objects.get(id="co_test_sync").stripe_data["percent_off"] == 25
+        assert Coupon.objects.count() == 1
