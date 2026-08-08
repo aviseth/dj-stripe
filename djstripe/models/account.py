@@ -154,7 +154,10 @@ class Account(StripeModel):
     def get_default_account(cls, api_key=None):
         # Resolve the key here rather than as a default argument so that it is
         # read at call time (the default would be frozen at import time).
-        api_key = api_key or djstripe_settings.STRIPE_SECRET_KEY
+        # `is None` rather than a truthiness check, so an explicitly passed
+        # empty key still behaves as it did under the old signature.
+        if api_key is None:
+            api_key = djstripe_settings.STRIPE_SECRET_KEY
 
         # dj-stripe does not attempt GET /v1/account with restricted keys: as of
         # API version 2020-03-02 no permission was available that allowed it.

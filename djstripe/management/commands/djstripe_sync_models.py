@@ -37,6 +37,7 @@ from django.apps import apps
 from django.core.exceptions import FieldDoesNotExist
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models as django_models
+from stripe import PermissionError as StripePermissionError
 
 from ... import enums, models
 from ...enums import APIKeyType
@@ -323,18 +324,28 @@ class Command(BaseCommand):
         """Get set of all stripe account ids including the Platform Acccount"""
         accs_set = set()
 
-        # special case, since own account isn't returned by Account.api_list.
-        # Restricted keys cannot call GET /v1/account, so it is skipped for
-        # those; connected accounts are still listed below.
+        # special case, since own account isn't returned by Account.api_list
         if not is_restricted_key(api_key):
             stripe_platform_obj = models.Account.stripe_class.retrieve(
                 api_key=api_key,
                 stripe_version=djstripe_settings.STRIPE_API_VERSION,
             )
             accs_set.add(stripe_platform_obj.id)
-        accs_set.update(
-            obj.id for obj in models.Account.api_list(api_key=api_key, **kwargs)
-        )
+        else:
+            # We can't learn the platform account id from a restricted key, but
+            # an empty stripe_account omits the Stripe-Account header, so the
+            # request still targets the key's own account. Without this the set
+            # would be empty and nothing would be synced at all.
+            accs_set.add("")
+
+        try:
+            accs_set.update(
+                obj.id for obj in models.Account.api_list(api_key=api_key, **kwargs)
+            )
+        except StripePermissionError:
+            # A restricted key may not be permitted to list connected accounts.
+            # That must not take down the sync of the key's own account.
+            pass
 
         return accs_set
 

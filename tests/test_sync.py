@@ -12,6 +12,7 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 from django.test.testcases import TestCase
 from stripe import InvalidRequestError
+from stripe import PermissionError as StripePermissionError
 
 from djstripe.enums import APIKeyType
 from djstripe.models import Account, APIKey, Customer
@@ -196,7 +197,9 @@ class TestSyncModelsRestrictedKeys(TestCase):
         retrieve_mock.assert_not_called()
 
     def test_get_stripe_account_skips_platform_retrieve_for_restricted_key(self):
-        # Skipping the platform account must not cost us the connected ones.
+        # Skipping the platform account must not cost us the connected ones,
+        # and the key's own account must still be represented -- by the empty
+        # string, which omits the Stripe-Account header on the resulting calls.
         connected = StripeList(
             data=[StripeItem(id="acct_one"), StripeItem(id="acct_two")]
         )
@@ -207,23 +210,46 @@ class TestSyncModelsRestrictedKeys(TestCase):
         ):
             accounts = Command.get_stripe_account(api_key=self.RK_TEST)
 
-        assert accounts == {"acct_one", "acct_two"}
+        assert accounts == {"", "acct_one", "acct_two"}
         retrieve_mock.assert_not_called()
 
-    def test_sync_account_with_restricted_key_does_not_crash(self):
+    def test_get_stripe_account_survives_unlistable_connected_accounts(self):
+        # A restricted key scoped to, say, customer-read only cannot list
+        # connected accounts. That must not abort the sync of its own account.
+        with (
+            patch("stripe.Account.retrieve") as retrieve_mock,
+            patch(
+                "djstripe.models.Account.api_list",
+                side_effect=StripePermissionError("not permitted"),
+            ),
+        ):
+            accounts = Command.get_stripe_account(api_key=self.RK_TEST)
+
+        assert accounts == {""}
+        retrieve_mock.assert_not_called()
+
+    def test_sync_with_restricted_key_actually_syncs(self):
+        # Regression: skipping the platform retrieve must not leave the account
+        # set empty, which would build no list kwargs and silently sync nothing
+        # while still exiting successfully.
         stderr = StringIO()
 
         with (
             patch("stripe.Account.retrieve") as retrieve_mock,
+            patch(
+                "djstripe.models.Customer.api_list", return_value=StripeList(data=[])
+            ) as api_list_mock,
             patch("djstripe.models.Account.api_list", return_value=StripeList(data=[])),
         ):
             call_command(
                 "djstripe_sync_models",
-                "Account",
+                "Customer",
                 api_keys=[self.RK_TEST],
                 stderr=stderr,
             )
 
+        assert api_list_mock.called, "restricted-key sync did no work at all"
+        assert api_list_mock.call_args.kwargs["stripe_account"] == ""
         retrieve_mock.assert_not_called()
         assert stderr.getvalue() == ""
 
