@@ -48,8 +48,8 @@ dev = [
 ]
 ci = [
     "coverage[toml]>=7.14.1,<8",
-    "tox>=4.55.1,<5",
-    "tox-gh>=1.7.1,<2",
+    "tox>=4.58.0,<5",
+    "tox-gh>=1.8.0,<2",
 ]
 
 [build-system]
@@ -67,7 +67,27 @@ include = [
 ]
 
 [tool.ruff.lint]
-select = ["B", "F", "FURB", "RET502", "RET505", "RET506", "RET507", "UP"]
+select = [
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "E4",    # pycodestyle: imports
+    "E7",    # pycodestyle: statements
+    "E9",    # pycodestyle: runtime errors
+    "F",     # pyflakes
+    "FURB",  # refurb
+    "I",     # isort — import sorting is enforced here, not by a separate hook
+    "PIE",   # flake8-pie
+    "RUF100",  # unused noqa directives
+    "UP",    # pyupgrade — supersedes the standalone pyupgrade hook
+    "W",     # pycodestyle warnings
+    # The remaining flake8-return rules (RET501/503/504) are deliberately not
+    # enabled; they fight with the explicit-return style used in the models.
+    "RET502",
+    "RET505",
+    "RET506",
+    "RET507",
+]
+# E501 is intentionally absent: line length is the formatter's job.
 
 [tool.mypy]
 plugins = ["mypy_django_plugin.main"]
@@ -86,41 +106,6 @@ ignore_errors = true
 
 [tool.django-stubs]
 django_settings_module = "tests.settings"
-
-[tool.tox]
-isolated_build = true
-envlist = [
-    "django{52,60,61}-py{312,313}-{postgres,sqlite}",
-    "django52-py311-{postgres,sqlite}",
-    "django{60,61}-py314-{postgres,sqlite}",
-    "djangomain-py314-postgres",
-]
-skip_missing_interpreters = true
-
-[tool.tox.gh.python]
-"3.14" = ["py314"]
-"3.13" = ["py313"]
-"3.12" = ["py312"]
-"3.11" = ["py311"]
-
-[tool.tox.testenv]
-passenv = ["DJSTRIPE_*"]
-
-commands = ["pytest {posargs}"]
-deps = [
-    "pytest-django",
-    "pytest-cov",
-    "pytest-dotenv",
-    "django52: Django>=5.2,<6.0",
-    "django60: Django>=6.0,<6.1",
-    "django61: Django>=6.1,<6.2",
-    "djangomain: https://github.com/django/django/archive/main.tar.gz",
-    "postgres: psycopg>=3.3.4",
-]
-
-[tool.tox.testenv.setenv]
-postgres = "DJSTRIPE_TEST_DB_VENDOR=postgres"
-sqlite = "DJSTRIPE_TEST_DB_VENDOR=sqlite"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"

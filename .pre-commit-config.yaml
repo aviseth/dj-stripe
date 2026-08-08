@@ -24,11 +24,6 @@ repos:
       - id: ruff-check
       - id: ruff-format
 
-  - repo: https://github.com/asottile/pyupgrade
-    rev: "v3.21.2"
-    hooks:
-      - id: pyupgrade
-
   - repo: https://github.com/adamchainz/django-upgrade
     rev: "1.31.1"
     hooks:

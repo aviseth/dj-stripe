@@ -5,9 +5,8 @@ dj-stripe form tests
 import pytest
 from django import forms
 from django.contrib.admin import helpers
-from django.forms.utils import ErrorDict
-
 from django.core.exceptions import ValidationError
+from django.forms.utils import ErrorDict
 
 from djstripe import enums, utils
 from djstripe.admin.forms import (

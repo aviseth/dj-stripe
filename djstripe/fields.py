@@ -92,8 +92,6 @@ class StripeQuantumCurrencyAmountField(FieldDeconstructMixin, models.BigIntegerF
     digits, hence the use of BigIntegerField instead of IntegerField
     """
 
-    pass
-
 
 class StripeDecimalCurrencyAmountField(FieldDeconstructMixin, models.DecimalField):
     """
@@ -170,5 +168,3 @@ class StripeDateTimeField(FieldDeconstructMixin, models.DateTimeField):
 
 class JSONField(FieldDeconstructMixin, BaseJSONField):
     """A field used to define a JSONField value according to djstripe logic."""
-
-    pass

@@ -598,8 +598,6 @@ class StripeModel(StripeBaseModel):
         :type current_ids: set
         """
 
-        pass
-
     def _attach_objects_post_save_hook(
         self,
         cls,

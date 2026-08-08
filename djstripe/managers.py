@@ -3,7 +3,7 @@ dj-stripe model managers
 """
 
 import decimal
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 from django.db import models
 from django.db.models.functions import Cast
@@ -31,8 +31,6 @@ def _month_unix_range(year, month):
 
 class StripeModelManager(models.Manager):
     """Manager used in StripeModel."""
-
-    pass
 
 
 class SubscriptionQuerySet(models.QuerySet):

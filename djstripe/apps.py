@@ -21,8 +21,13 @@ class DjstripeAppConfig(AppConfig):
     def ready(self):
         import stripe
 
-        from . import _stripe_compat  # noqa: F401  (patch StripeObject for v15+)
-        from . import checks, event_handlers  # noqa (register event handlers)
+        # Imported for their side effects: _stripe_compat patches StripeObject
+        # for stripe v15+, while checks and event_handlers register themselves.
+        from . import (  # noqa: F401
+            _stripe_compat,
+            checks,
+            event_handlers,
+        )
 
         # Set app info
         # https://stripe.com/docs/building-plugins#setappinfo

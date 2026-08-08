@@ -3,7 +3,6 @@ from django.test.testcases import TestCase
 
 from djstripe.models import Coupon
 
-
 pytestmark = pytest.mark.django_db
 
 

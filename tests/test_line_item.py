@@ -13,6 +13,7 @@ from django.test.testcases import TestCase
 
 from djstripe.models import Invoice
 from djstripe.models.billing import LineItem
+
 from . import (
     FAKE_BALANCE_TRANSACTION,
     FAKE_CARD_AS_PAYMENT_METHOD,

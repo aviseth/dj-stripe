@@ -15,8 +15,8 @@ from stripe import InvalidRequestError
 from stripe import PermissionError as StripePermissionError
 
 from djstripe.enums import APIKeyType
-from djstripe.models import Account, APIKey, Customer
 from djstripe.management.commands.djstripe_sync_models import Command
+from djstripe.models import Account, APIKey, Customer
 from djstripe.settings import djstripe_settings
 from djstripe.sync import sync_subscriber
 

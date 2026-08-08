@@ -521,7 +521,7 @@ class Command(BaseCommand):
             for k in readonly_fields:
                 create_obj.pop(k, None)
 
-            obj = stripe.Customer.create_source(**{"source": "tok_visa"})
+            obj = stripe.Customer.create_source(source="tok_visa")
 
             for k, v in create_obj.items():
                 setattr(obj, k, v)

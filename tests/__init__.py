@@ -27,7 +27,7 @@ FIXTURE_DIR_PATH = Path(__file__).parent.joinpath("fixtures")
 
 # Re-exports for backwards compatibility — tests historically did
 # ``from tests import AssertStripeFksMixin, COMMON_BLANK_FKS``.
-from .asserts import AssertStripeFksMixin, COMMON_BLANK_FKS  # noqa: F401, E402
+from .asserts import COMMON_BLANK_FKS, AssertStripeFksMixin  # noqa: F401, E402
 
 
 def load_fixture(filename):
@@ -2319,4 +2319,7 @@ FAKE_EVENT_SUBSCRIPTION_SCHEDULE_ABORTED["data"]["previous_attributes"] = {
 
 
 # Re-exports for backwards compatibility.
-from .stripe_world import mock_stripe_world, monkeypatch_stripe_world  # noqa: F401, E402
+from .stripe_world import (  # noqa: F401, E402
+    mock_stripe_world,
+    monkeypatch_stripe_world,
+)
