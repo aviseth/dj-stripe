@@ -68,6 +68,7 @@ First, import the necessary modules and decorators from dj-stripe and define fun
 from djstripe.event_handlers import djstripe_receiver
 from djstripe.models import Event, Charge, PaymentMethod
 
+
 @djstripe_receiver("charge.succeeded")
 def handle_charge_succeeded(sender, **kwargs):
     event: Event = kwargs.get("event")
@@ -77,6 +78,7 @@ def handle_charge_succeeded(sender, **kwargs):
     print(f"Sender: {sender}")
     print(f"Event: {event}")
     print(f"Charge: {charge}")
+
 
 @djstripe_receiver("payment_method.attached")
 def handle_payment_method_attached(sender, **kwargs):
@@ -92,13 +94,14 @@ def handle_payment_method_attached(sender, **kwargs):
 A single receiver can subscribe to multiple event types by passing a list:
 
 ```python
-@djstripe_receiver([
-    "customer.subscription.created",
-    "customer.subscription.updated",
-    "customer.subscription.deleted",
-])
-def handle_subscription_change(sender, event, **kwargs):
-    ...
+@djstripe_receiver(
+    [
+        "customer.subscription.created",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+    ]
+)
+def handle_subscription_change(sender, event, **kwargs): ...
 ```
 
 #### 2. Ensure Proper Loading of Handlers
@@ -108,8 +111,9 @@ Ensure that your custom signal handlers are loaded at the appropriate time by in
 ```python
 from django.apps import AppConfig
 
+
 class MyAppConfig(AppConfig):
-    name = 'my_app'
+    name = "my_app"
 
     def ready(self):
         import my_app.signals  # ensure your signals are imported

@@ -66,9 +66,13 @@ class ConfirmCustomAction(FormView):
                 self.request, messages.ERROR, msg.as_text(), fail_silently=True
             )
 
-        return model_admin.get_action(action_name)[0](
-            model_admin, self.request, queryset
-        )
+        action = model_admin.get_action(action_name)
+        # Django 6.1+ returns an Action dataclass; earlier versions return a
+        # plain (callable, name, description) tuple. Indexing into it is
+        # deprecated and removed in Django 7.0.
+        func = action.func if hasattr(action, "func") else action[0]
+
+        return func(model_admin, self.request, queryset)
 
     def get_form_kwargs(self):
         form_kwargs = super().get_form_kwargs()

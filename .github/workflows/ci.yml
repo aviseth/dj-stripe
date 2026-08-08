@@ -4,8 +4,6 @@ on:
   push:
     paths-ignore:
       - "docs/**"
-      - "mkdocs.yml"
-      - ".readthedocs.yml"
       - ".github/workflows/docs.yml"
 
   pull_request:

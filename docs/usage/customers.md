@@ -62,9 +62,9 @@ SERVICE_STATUSES = {
     SubscriptionStatus.past_due,
 }
 
-service_subscriptions = (
-    customer.subscriptions.with_status(*SERVICE_STATUSES).period_current()
-)
+service_subscriptions = customer.subscriptions.with_status(
+    *SERVICE_STATUSES
+).period_current()
 
 has_access = service_subscriptions.exists()
 has_product_access = service_subscriptions.for_product(product).exists()

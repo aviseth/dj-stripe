@@ -19,6 +19,7 @@ classifiers = [
     "Framework :: Django",
     "Framework :: Django :: 5.2",
     "Framework :: Django :: 6.0",
+    "Framework :: Django :: 6.1",
 ]
 dependencies = [
     "django>=5.2",
@@ -43,15 +44,7 @@ dev = [
     "pytest>=9.1.1,<10",
     "pytest-django>=4.12.0,<5",
     "pytest-dotenv>=0.5.2,<0.6",
-    "ruff>=0.15.18,<0.16",
-]
-docs = [
-    "mkdocs>=1.6.1,<2",
-    "mkdocs-material>=9.7.6,<10",
-    "mkdocs-autorefs>=1.4.4,<2",
-    "mkdocstrings[python]>=1.0.4,<2",
-    "mike>=2.2.0,<3",
-    "jinja2>=3.1.6,<4",
+    "ruff>=0.16.2,<0.17",
 ]
 ci = [
     "coverage[toml]>=7.14.1,<8",
@@ -97,9 +90,9 @@ django_settings_module = "tests.settings"
 [tool.tox]
 isolated_build = true
 envlist = [
-    "django{52,60}-py{312,313}-{postgres,sqlite}",
+    "django{52,60,61}-py{312,313}-{postgres,sqlite}",
     "django52-py311-{postgres,sqlite}",
-    "django60-py314-{postgres,sqlite}",
+    "django{60,61}-py314-{postgres,sqlite}",
     "djangomain-py314-postgres",
 ]
 skip_missing_interpreters = true
@@ -120,6 +113,7 @@ deps = [
     "pytest-dotenv",
     "django52: Django>=5.2,<6.0",
     "django60: Django>=6.0,<6.1",
+    "django61: Django>=6.1,<6.2",
     "djangomain: https://github.com/django/django/archive/main.tar.gz",
     "postgres: psycopg>=3.3.4",
 ]
