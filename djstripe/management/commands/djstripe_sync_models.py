@@ -37,11 +37,16 @@ from django.apps import apps
 from django.core.exceptions import FieldDoesNotExist
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models as django_models
+from stripe import PermissionError as StripePermissionError
 
 from ... import enums, models
 from ...enums import APIKeyType
 from ...exceptions import InvalidStripeAPIKey
-from ...models.api import get_api_key_details_by_prefix, redact_api_key
+from ...models.api import (
+    get_api_key_details_by_prefix,
+    is_restricted_key,
+    redact_api_key,
+)
 from ...models.base import StripeBaseModel
 from ...settings import djstripe_settings
 
@@ -212,15 +217,19 @@ class Command(BaseCommand):
         count = 0
         object_errors = 0
         try:
+            # Resolved once, outside the loop. This is None for restricted
+            # keys, which cannot retrieve the platform account.
+            default_account = (
+                models.Account.get_default_account(api_key=api_key)
+                if model is models.Account
+                else None
+            )
+
             # todo convert get_list_kwargs into a generator to make the code memory effecient.
             for list_kwargs in self.get_list_kwargs(model, api_key=api_key):
                 stripe_account = list_kwargs.get("stripe_account", "")
 
-                if (
-                    model is models.Account
-                    and stripe_account
-                    == models.Account.get_default_account(api_key=api_key).id
-                ):
+                if default_account is not None and stripe_account == default_account.id:
                     # special case, since own account isn't returned by Account.api_list
                     stripe_obj = models.Account.stripe_class.retrieve(
                         api_key=api_key,
@@ -316,14 +325,27 @@ class Command(BaseCommand):
         accs_set = set()
 
         # special case, since own account isn't returned by Account.api_list
-        stripe_platform_obj = models.Account.stripe_class.retrieve(
-            api_key=api_key,
-            stripe_version=djstripe_settings.STRIPE_API_VERSION,
-        )
-        accs_set.add(stripe_platform_obj.id)
-        accs_set.update(
-            obj.id for obj in models.Account.api_list(api_key=api_key, **kwargs)
-        )
+        if not is_restricted_key(api_key):
+            stripe_platform_obj = models.Account.stripe_class.retrieve(
+                api_key=api_key,
+                stripe_version=djstripe_settings.STRIPE_API_VERSION,
+            )
+            accs_set.add(stripe_platform_obj.id)
+        else:
+            # We can't learn the platform account id from a restricted key, but
+            # an empty stripe_account omits the Stripe-Account header, so the
+            # request still targets the key's own account. Without this the set
+            # would be empty and nothing would be synced at all.
+            accs_set.add("")
+
+        try:
+            accs_set.update(
+                obj.id for obj in models.Account.api_list(api_key=api_key, **kwargs)
+            )
+        except StripePermissionError:
+            # A restricted key may not be permitted to list connected accounts.
+            # That must not take down the sync of the key's own account.
+            pass
 
         return accs_set
 

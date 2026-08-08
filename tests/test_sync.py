@@ -12,14 +12,15 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 from django.test.testcases import TestCase
 from stripe import InvalidRequestError
+from stripe import PermissionError as StripePermissionError
 
 from djstripe.enums import APIKeyType
-from djstripe.models import APIKey, Customer
+from djstripe.models import Account, APIKey, Customer
 from djstripe.management.commands.djstripe_sync_models import Command
 from djstripe.settings import djstripe_settings
 from djstripe.sync import sync_subscriber
 
-from . import FAKE_CUSTOMER, StripeList
+from . import FAKE_CUSTOMER, StripeItem, StripeList
 from .conftest import CreateAccountMixin
 
 
@@ -171,3 +172,104 @@ class TestSyncModelsGetApiKeys(TestCase):
         stderr = StringIO()
         call_command("djstripe_sync_models", "Account", stderr=stderr)
         assert "don't have any API Keys" in stderr.getvalue()
+
+
+class TestSyncModelsRestrictedKeys(TestCase):
+    """
+    dj-stripe does not attempt `GET /v1/account` with restricted keys.
+
+    Regression tests for #1908: syncing with `--api-keys rk_...` crashed with
+    `'NoneType' object has no attribute 'id'`, because the restricted-key guard
+    in `Account.get_default_account()` inspected the key configured in settings
+    rather than the key it was passed.
+    """
+
+    RK_TEST = "rk_test_" + "d" * 24
+
+    def test_get_default_account_returns_none_for_passed_restricted_key(self):
+        # Settings hold an `sk_` key, but the caller passes an `rk_` one. The
+        # guard must follow the argument, not the setting.
+        assert not djstripe_settings.STRIPE_SECRET_KEY.startswith("rk_")
+
+        with patch("stripe.Account.retrieve") as retrieve_mock:
+            assert Account.get_default_account(api_key=self.RK_TEST) is None
+
+        retrieve_mock.assert_not_called()
+
+    def test_get_stripe_account_skips_platform_retrieve_for_restricted_key(self):
+        # Skipping the platform account must not cost us the connected ones,
+        # and the key's own account must still be represented -- by the empty
+        # string, which omits the Stripe-Account header on the resulting calls.
+        connected = StripeList(
+            data=[StripeItem(id="acct_one"), StripeItem(id="acct_two")]
+        )
+
+        with (
+            patch("stripe.Account.retrieve") as retrieve_mock,
+            patch("djstripe.models.Account.api_list", return_value=connected),
+        ):
+            accounts = Command.get_stripe_account(api_key=self.RK_TEST)
+
+        assert accounts == {"", "acct_one", "acct_two"}
+        retrieve_mock.assert_not_called()
+
+    def test_get_stripe_account_survives_unlistable_connected_accounts(self):
+        # A restricted key scoped to, say, customer-read only cannot list
+        # connected accounts. That must not abort the sync of its own account.
+        with (
+            patch("stripe.Account.retrieve") as retrieve_mock,
+            patch(
+                "djstripe.models.Account.api_list",
+                side_effect=StripePermissionError("not permitted"),
+            ),
+        ):
+            accounts = Command.get_stripe_account(api_key=self.RK_TEST)
+
+        assert accounts == {""}
+        retrieve_mock.assert_not_called()
+
+    def test_sync_with_restricted_key_actually_syncs(self):
+        # Regression: skipping the platform retrieve must not leave the account
+        # set empty, which would build no list kwargs and silently sync nothing
+        # while still exiting successfully.
+        stderr = StringIO()
+
+        with (
+            patch("stripe.Account.retrieve") as retrieve_mock,
+            patch(
+                "djstripe.models.Customer.api_list", return_value=StripeList(data=[])
+            ) as api_list_mock,
+            patch("djstripe.models.Account.api_list", return_value=StripeList(data=[])),
+        ):
+            call_command(
+                "djstripe_sync_models",
+                "Customer",
+                api_keys=[self.RK_TEST],
+                stderr=stderr,
+            )
+
+        assert api_list_mock.called, "restricted-key sync did no work at all"
+        assert api_list_mock.call_args.kwargs["stripe_account"] == ""
+        retrieve_mock.assert_not_called()
+        assert stderr.getvalue() == ""
+
+    @override_settings(
+        STRIPE_TEST_SECRET_KEY="rk_test_" + "e" * 24, STRIPE_LIVE_SECRET_KEY=""
+    )
+    def test_sync_account_does_not_dereference_missing_default_account(self):
+        # The originally reported failure: with a restricted key configured,
+        # `get_default_account()` correctly returns None and the command then
+        # blew up dereferencing `.id` on it. `get_stripe_account` is stubbed so
+        # the run reaches that line instead of failing earlier on the
+        # platform-account retrieve.
+        stderr = StringIO()
+
+        with (
+            patch.object(Command, "get_stripe_account", return_value={"acct_test"}),
+            patch("djstripe.models.Account.api_list", return_value=StripeList(data=[])),
+        ):
+            call_command("djstripe_sync_models", "Account", stderr=stderr)
+
+        # Assert on the outcome, not just on the absence of the old error
+        # string: nothing should be reported as failed at all.
+        assert stderr.getvalue() == ""
