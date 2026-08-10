@@ -1,9 +1,13 @@
+from unittest.mock import patch
+
 from django.core import checks
 from django.core.management import call_command
+from django.db.utils import DatabaseError
 from django.template.loader import get_template
 from django.test import TestCase
 from django.test.utils import override_settings
 
+from djstripe.checks import check_webhook_endpoint_secrets_are_valid
 from djstripe.models import WebhookEndpoint
 
 
@@ -58,3 +62,34 @@ class TestSystemChecksDoNotTouchTheDatabase(TestCase):
             messages = checks.run_checks()
 
         assert "djstripe.C007" in {m.id for m in messages}
+
+    @override_settings(DJSTRIPE_WEBHOOK_VALIDATION="verify_signature")
+    def test_database_tagged_checks_survive_an_unavailable_database(self):
+        # An unmigrated or unreachable database must degrade to "no messages"
+        # rather than crashing the very `migrate` that would fix it.
+        # Both managers are stubbed: the secrets check calls .all(), the
+        # has-secret check calls .filter().
+        manager = WebhookEndpoint.objects
+        error = DatabaseError("no such table: djstripe_webhookendpoint")
+
+        with (
+            patch.object(manager, "all", side_effect=error),
+            patch.object(manager, "filter", side_effect=error),
+        ):
+            messages = checks.run_checks(tags=[checks.Tags.database])
+
+        assert messages == []
+
+    @override_settings(DJSTRIPE_WEBHOOK_VALIDATION="retrieve_event")
+    def test_endpoint_secret_check_skips_unless_verifying_signatures(self):
+        # Secrets are only used for signature verification, so the check
+        # short-circuits in any other mode -- without hitting the database.
+        WebhookEndpoint.objects.create(
+            id="we_test_retrieve_event",
+            secret="",
+            enabled_events=["*"],
+            stripe_data={"id": "we_test_retrieve_event", "object": "webhook_endpoint"},
+        )
+
+        with self.assertNumQueries(0):
+            assert check_webhook_endpoint_secrets_are_valid() == []
