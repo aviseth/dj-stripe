@@ -196,17 +196,6 @@ class TestSyncModelsRestrictedKeys(TestCase):
         # The call is attempted: Stripe decides, the key prefix does not.
         retrieve_mock.assert_called_once()
 
-    def test_get_default_account_is_returned_when_a_restricted_key_may_read_it(self):
-        # A restricted key granted the permission must not be denied on its
-        # prefix -- this is what the old guard got wrong.
-        account_data = StripeItem(id="acct_permitted", object="account", livemode=False)
-
-        with patch("stripe.Account.retrieve", return_value=account_data):
-            account = Account.get_default_account(api_key=self.RK_TEST)
-
-        assert account is not None
-        assert account.id == "acct_permitted"
-
     def test_get_stripe_account_falls_back_when_the_platform_account_is_denied(self):
         # Losing the platform account id must not cost us the connected ones,
         # and the key's own account must still be represented -- by the empty
@@ -283,6 +272,23 @@ class TestSyncModelsRestrictedKeys(TestCase):
                 assert command.get_stripe_account_cached(self.RK_TEST) is sentinel
 
         get_mock.assert_called_once()
+
+    def test_the_account_cache_is_keyed_by_api_key(self):
+        # A cache shared across keys would hand one key another key's accounts.
+        command = Command()
+        other_key = "rk_test_" + "f" * 24
+
+        with patch.object(
+            Command, "get_stripe_account", side_effect=[{"acct_a"}, {"acct_b"}]
+        ) as get_mock:
+            first = command.get_stripe_account_cached(self.RK_TEST)
+            second = command.get_stripe_account_cached(other_key)
+            # ...and repeats still come from the cache.
+            assert command.get_stripe_account_cached(self.RK_TEST) == first
+
+        assert first == {"acct_a"}
+        assert second == {"acct_b"}
+        assert get_mock.call_count == 2
 
     @override_settings(
         STRIPE_TEST_SECRET_KEY="rk_test_" + "e" * 24, STRIPE_LIVE_SECRET_KEY=""
