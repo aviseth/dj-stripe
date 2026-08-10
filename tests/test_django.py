@@ -33,13 +33,17 @@ class TestSystemChecksDoNotTouchTheDatabase(TestCase):
     dj-stripe's system checks used to query `WebhookEndpoint` on every
     management command, which opens a connection to the configured database.
     That breaks tooling which expects no open connections (e.g. django-extensions'
-    `reset_db`). The checks that need the database are tagged `Tags.database`,
-    which Django excludes from the default check run.
+    `reset_db`). The checks that need the database are tagged `Tags.database`
+    and opt out unless an alias is passed.
+
+    Note the assertions go through `call_command("check")` rather than a bare
+    `checks.run_checks()`: only Django 6.1+ filters database-tagged checks out
+    of an untargeted run, so a bare call would pass on 6.1 and fail on 5.2/6.0.
     """
 
-    def test_default_check_run_makes_no_queries(self):
+    def test_manage_py_check_makes_no_queries(self):
         with self.assertNumQueries(0):
-            checks.run_checks()
+            call_command("check")
 
     def test_database_tagged_checks_still_run(self):
         # The checks must not merely be silenced -- they still have to run
@@ -51,7 +55,7 @@ class TestSystemChecksDoNotTouchTheDatabase(TestCase):
             stripe_data={"id": "we_test_no_secret", "object": "webhook_endpoint"},
         )
 
-        messages = checks.run_checks(tags=[checks.Tags.database])
+        messages = checks.run_checks(tags=[checks.Tags.database], databases=["default"])
 
         assert "djstripe.W005" in {m.id for m in messages}
 
@@ -76,7 +80,9 @@ class TestSystemChecksDoNotTouchTheDatabase(TestCase):
             patch.object(manager, "all", side_effect=error),
             patch.object(manager, "filter", side_effect=error),
         ):
-            messages = checks.run_checks(tags=[checks.Tags.database])
+            messages = checks.run_checks(
+                tags=[checks.Tags.database], databases=["default"]
+            )
 
         assert messages == []
 
@@ -92,4 +98,4 @@ class TestSystemChecksDoNotTouchTheDatabase(TestCase):
         )
 
         with self.assertNumQueries(0):
-            assert check_webhook_endpoint_secrets_are_valid() == []
+            assert check_webhook_endpoint_secrets_are_valid(databases=["default"]) == []
