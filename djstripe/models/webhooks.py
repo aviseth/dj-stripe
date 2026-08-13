@@ -322,6 +322,9 @@ class WebhookEventTrigger(models.Model):
 
         # HTTP headers are case-insensitive, but we store them as a dict.
         signature = CaseInsensitiveMapping(self.headers).get("stripe-signature")
+        if not signature:
+            logger.error("Missing stripe-signature header")
+            return False
 
         try:
             stripe.WebhookSignature.verify_header(
