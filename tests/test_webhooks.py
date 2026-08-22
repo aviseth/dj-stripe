@@ -236,6 +236,17 @@ class TestWebhookEventTrigger(CreateAccountMixin, TestCase):
         self.assertFalse(Event.objects.filter(id="evt_invalid").exists())
         event_retrieve_mock.assert_not_called()
 
+    def test_verify_signature_without_a_signature_header(self):
+        # A request with no Stripe-Signature header cannot be verified. Stripe's
+        # verify_header is typed to require the header, so we refuse before
+        # calling it rather than handing it None.
+        trigger = WebhookEventTrigger(headers={}, body="{}")
+
+        with patch("stripe.WebhookSignature.verify_header") as verify_header_mock:
+            assert trigger.verify_signature("whsec_XXXXX", tolerance=300) is False
+
+        verify_header_mock.assert_not_called()
+
     @staticmethod
     def _stripe_signature_header(payload: str, secret: str, timestamp: int) -> str:
         """Compute a real Stripe-Signature header for the given payload.

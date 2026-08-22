@@ -16,14 +16,7 @@ customer = Customer.objects.first()
 customer.subscribe(items=[{"price": price_1}])
 ```
 
-## Alternate Approach
-
-```python
-## (Alternate Approach) This will subscribe customer to price_1
-price_1 = Price.objects.get(nickname="one_price")
-customer = Customer.objects.first()
-customer.subscribe(price=price_1)
-```
+For a single price, `customer.subscribe(price=price_1)` is equivalent.
 
 In some cases [`Customer.subscribe()`][djstripe.models.core.Customer.subscribe] might
 not expose every argument you need. When that happens, create the subscription

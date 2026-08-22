@@ -14,8 +14,8 @@ existing Stripe account.
     ./manage.py djstripe_sync_models
 ```
 
-With no arguments this will sync all supported models for all in database API Keys, or a list of
-models to sync can also be provided.
+With no arguments this syncs all supported models for every secret key in the
+database and in your settings. You can also name the models to sync.
 
 ```bash
     ./manage.py djstripe_sync_models Invoice Subscription
@@ -30,7 +30,8 @@ A list of models to sync can also be provided along with the API Keys.
     ./manage.py djstripe_sync_models Invoice Subscription --api-keys sk_test_XXX sk_test_YYY
 ```
 
-This will sync all the Invoice and Subscription data for the given API Keys. Please note that the API Keys sk_test_YYY and sk_test_XXX need to be in the database.
+Keys passed with `--api-keys` are used as given; they do not need to be in the
+database.
 
 You can manually reprocess events using the management commands
 [`djstripe_process_events`][djstripe.management.commands.djstripe_process_events]. By default this processes all events, but

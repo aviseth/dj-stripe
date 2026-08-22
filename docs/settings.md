@@ -87,5 +87,4 @@ See [Using Stripe Webhooks](usage/webhooks.md) for the full webhook guide.
 
 A callable `(object_type, action, livemode) -> str` used to generate
 [idempotency keys](https://stripe.com/docs/api/idempotent_requests) for Stripe
-requests. By default dj-stripe stores and reuses keys via its `IdempotencyKey`
-model.
+requests. See [Idempotency](usage/idempotency.md).
