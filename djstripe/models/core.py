@@ -1439,6 +1439,29 @@ class PaymentIntent(StripeModel):
         help_text="Payment method used in this PaymentIntent.",
     )
 
+    @classmethod
+    def create(cls, api_key=None, **kwargs):
+        """
+        Create a PaymentIntent in Stripe and sync it.
+
+        Any dj-stripe model instance passed as a keyword argument (for example
+        ``customer`` or ``payment_method``) is replaced by its Stripe id.
+        All other keyword arguments are passed through to
+        ``stripe.PaymentIntent.create``.
+
+        :param api_key: The api key to use for this request.
+            Defaults to djstripe_settings.STRIPE_SECRET_KEY.
+        :type api_key: string
+        """
+        api_kwargs = {
+            key: value.id if isinstance(value, StripeModel) else value
+            for key, value in kwargs.items()
+        }
+        stripe_payment_intent = cls._api_create(api_key=api_key, **api_kwargs)
+
+        api_key = api_key or djstripe_settings.STRIPE_SECRET_KEY
+        return cls.sync_from_stripe_data(stripe_payment_intent, api_key=api_key)
+
     def update(self, api_key=None, stripe_account=None, **kwargs):
         """
         Call the stripe API's modify operation for this model and sync the result.

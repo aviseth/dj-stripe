@@ -2,25 +2,25 @@
 
 ## Payment Intents (recommended)
 
-Create a
-[`PaymentIntent`](https://stripe.com/docs/payments/payment-intents) through the
-Stripe API and sync it. This supports SCA and all payment method types:
+[`PaymentIntent.create()`][djstripe.models.core.PaymentIntent.create] creates a
+[PaymentIntent](https://stripe.com/docs/payments/payment-intents) in Stripe and
+syncs it. This supports SCA and all payment method types:
 
 ```python
-import stripe
 from djstripe.models import PaymentIntent
 
-intent = stripe.PaymentIntent.create(
+intent = PaymentIntent.create(
     amount=1000,  # minor units: 10.00 USD
     currency="usd",
-    customer=customer.id,
-    payment_method=customer.default_payment_method.id,
+    customer=customer,
+    payment_method=customer.default_payment_method,
     off_session=True,
     confirm=True,
-    api_key=api_key,
 )
-PaymentIntent.sync_from_stripe_data(intent)
 ```
+
+Keyword arguments are passed through to the Stripe API; dj-stripe model
+instances are converted to their ids.
 
 Collect the payment method in the browser first; see
 [Integrating Stripe Elements](../stripe_elements_js.md). The resulting `Charge` is
