@@ -22,7 +22,7 @@ classifiers = [
     "Framework :: Django :: 6.1",
 ]
 dependencies = [
-    "django>=5.2",
+    "django>=5.2.17",
     "stripe>=15.0.1,<16",
 ]
 
