@@ -16,6 +16,20 @@ updates:
       - "update"
       - "action dependencies"
 
+  # Update pre-commit hooks. Without this the hook revs rot in place while the
+  # matching pip dependencies move, which is how ruff drifted out of lockstep.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      # Prefix all commit messages with "[pre-commit] " (no colon, but a trailing whitespace)
+      prefix: "[pre-commit] "
+    # Labels on pull requests for version updates only
+    labels:
+      - "update"
+      - "pip dependencies"
+
   # Update python packages
   - package-ecosystem: "pip"
     directory: "/"
