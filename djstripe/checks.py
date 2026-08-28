@@ -95,7 +95,6 @@ def check_webhook_validation(app_configs=None, **kwargs):
     """
     Check that DJSTRIPE_WEBHOOK_VALIDATION is valid
     """
-    from .models import WebhookEndpoint
     from .settings import djstripe_settings
 
     setting_name = "DJSTRIPE_WEBHOOK_VALIDATION"
@@ -115,19 +114,6 @@ def check_webhook_validation(app_configs=None, **kwargs):
                 id="djstripe.W004",
             )
         )
-    elif djstripe_settings.WEBHOOK_VALIDATION == "verify_signature":
-        try:
-            webhooks = list(WebhookEndpoint.objects.all())
-        except DatabaseError:
-            # Skip the db-based check (database most likely not migrated yet)
-            webhooks = []
-
-        if webhooks:
-            for endpoint in webhooks:
-                secret = endpoint.secret
-                # check secret
-                _check_webhook_endpoint_validation(secret, messages, endpoint=endpoint)
-
     elif djstripe_settings.WEBHOOK_VALIDATION not in validation_options:
         messages.append(
             checks.Critical(
@@ -140,10 +126,53 @@ def check_webhook_validation(app_configs=None, **kwargs):
     return messages
 
 
-@checks.register("djstripe")
-def check_webhook_endpoint_has_secret(app_configs=None, **kwargs):
+@checks.register("djstripe", checks.Tags.database)
+def check_webhook_endpoint_secrets_are_valid(
+    app_configs=None, databases=None, **kwargs
+):
+    """
+    Check the secret of every Webhook Endpoint is usable for signature validation.
+
+    Split out of `check_webhook_validation` and tagged `database` so that the
+    setting checks above still run on every management command, while this one
+    only runs where database access is expected.
+    """
+    from .models import WebhookEndpoint
+    from .settings import djstripe_settings
+
+    # `Tags.database` alone is not enough: only Django 6.1+ filters
+    # database-tagged checks out of an untargeted run. On 5.2 and 6.0 the check
+    # is still called, and is expected to opt out on the `databases` argument
+    # itself -- the same contract Django's own database checks follow.
+    if not databases:
+        return []
+
+    if djstripe_settings.WEBHOOK_VALIDATION != "verify_signature":
+        return []
+
+    messages = []
+
+    try:
+        webhooks = list(WebhookEndpoint.objects.all())
+    except DatabaseError:
+        # Skip the db-based check (database most likely not migrated yet)
+        return []
+
+    for endpoint in webhooks:
+        _check_webhook_endpoint_validation(endpoint.secret, messages, endpoint=endpoint)
+
+    return messages
+
+
+@checks.register("djstripe", checks.Tags.database)
+def check_webhook_endpoint_has_secret(app_configs=None, databases=None, **kwargs):
     """Checks if all Webhook Endpoints have not empty secrets."""
     from djstripe.models import WebhookEndpoint
+
+    # See the note in check_webhook_endpoint_secrets_are_valid: the tag is not
+    # sufficient on its own before Django 6.1.
+    if not databases:
+        return []
 
     messages = []
 
